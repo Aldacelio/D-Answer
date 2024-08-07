@@ -9,7 +9,7 @@ import (
 	"os/signal"
 
 	"github.com/Aldacelio/D-Answer/internal/store/pgstore"
-	"github.com/Aldacelio/D-Answer/internal/store/pgstore/api"
+	"github.com/Aldacelio/D-Answer/internal/api"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
