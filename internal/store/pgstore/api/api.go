@@ -1,9 +1,14 @@
 package api
 
 import (
+	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/Aldacelio/D-Answer/internal/store/pgstore"
+	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -13,6 +18,7 @@ import (
 type apiHandler struct {
 	q *pgstore.Queries
 	r *chi.Mux
+	upgrader websocket.Upgrader
 }
 
 func (h apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -22,6 +28,7 @@ func (h apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func NewHandler(q *pgstore.Queries) http.Handler {
 	a := apiHandler{
 		q: q,
+		upgrader: websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 	}
 
 	r := chi.NewRouter()
@@ -62,7 +69,33 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 	return a
 }
 
-func (h apiHandler) handleSubscribeToRoom(w http.ResponseWriter, r *http.Request)        {}
+func (h apiHandler) handleSubscribeToRoom(w http.ResponseWriter, r *http.Request)        {
+	rawRoomID := chi.URLParam(r, "room_id")
+	roomID, err := uuid.Parse(rawRoomID)
+	if err != nil {
+		http.Error(w, "invalid room id", http.StatusBadRequest)
+		return
+	}
+	
+	_, err = h.q.GetRoom(r.Context(), roomID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "room not found", http.StatusBadRequest)
+			return
+		}
+
+		http.Error(w, "somenthing went wrong", http.StatusInternalServerError)
+		return
+	}
+
+	c, err := h.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		slog.Warn("failed to upgrade connection", err)
+		http.Error(w, "failed to upgrade to web socket connection", http.StatusBadRequest)
+		return
+	}
+	defer c.Close()
+}
 func (h apiHandler) handleCreateRoom(w http.ResponseWriter, r *http.Request)             {}
 func (h apiHandler) handleGetRooms(w http.ResponseWriter, r *http.Request)               {}
 func (h apiHandler) handleCreateRoomMessage(w http.ResponseWriter, r *http.Request)      {}
